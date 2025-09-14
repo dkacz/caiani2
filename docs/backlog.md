@@ -126,7 +126,7 @@
   rationale: Golden CSVs for acceptance tests.
   paper_refs:
     - {section: "Policy levers", page: null, eq_or_fig_or_tab: "θ (progressive tax), tu (wage rigidity)"}
-  deps: ["T-ORACLE-CSV-EXPORT", "T-ORACLE-WSL-SETUP", "T-ORACLE-SEED"]
+  deps: ["T-ORACLE-CSV-EXPORT", "T-ORACLE-WSL-SETUP", "T-ORACLE-SEED", "T-META-STATUS"]
   instructions: Run baseline; θ∈{0.0,1.5}; tu∈{1,4}; fixed seed/horizon; ensure scenario-specific `fileNamePrefix`; canonicalize outputs.
   acceptance_criteria: "5 runs present; canonical headers; meta.json includes seed & effective θ/tu; `meta.raw_sources` contains no 'FALLBACK:'; scenario `series.csv` differ from baseline in ≥3 of {GDP,CONS,INV,INFL,UNEMP,PROD_C}."
   artifacts_expected:
@@ -149,6 +149,18 @@
   artifacts_expected: ["artifacts/golden_java/repro_check.txt"]
   repo_paths_hint: ["s120_inequality_innovation/oracle/*", "ci/"]
   estimate: S
+
+- id: T-META-STATUS
+  title: Meta run-status stamping in collector
+  rationale: Avoids silent failures when Java run falls back to collection.
+  paper_refs:
+    - {section: "Diagnostics", page: null, eq_or_fig_or_tab: "Run metadata"}
+  deps: ["T-ORACLE-CSV-EXPORT"]
+  instructions: In collector: set `java_run_ok: true/false` and `java_error` (string) in meta.json depending on JPype call outcome.
+  acceptance_criteria: "meta.json contains run-status fields for every scenario."
+  artifacts_expected: ["artifacts/golden_java/<run>/meta.json"]
+  repo_paths_hint: ["s120_inequality_innovation/oracle/cli.py"]
+  estimate: XS
 
 - id: T-PARAM-HARMONIZE
   title: Harmonize YAML with Java XML (one-to-one map)

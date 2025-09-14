@@ -1,0 +1,645 @@
+1. WHAT I CHANGED
+
+- Implemented resilient oracle run path: `s120_inequality_innovation/oracle/cli.py` now catches Java harness failures and proceeds to collection, easing local troubleshooting without hard failures.
+- Added `docs/oracle_local_run.md` documenting the local, seeded golden-generation procedure (classpath, XML, commands, acceptance checks, troubleshooting).
+- Synced backlog doc: recreated `docs/backlog.md` with the current backlog YAML as the source of truth.
+- Initialized git repository, committed current work, and pushed to the configured remote to trigger CI.
+
+2. COMMANDS I RAN
+
+- Repo scan and inspection: `ls -la`, `rg -n ...`, `sed -n ...`
+- Oracle repro smoke (expected to fail without classpath):
+  - `python3 -m s120_inequality_innovation.oracle.cli --xml artifacts/golden_java/headless/main_headless.xml repro --seed 12345`
+  - First line of repro log: `sed -n '1,1p' artifacts/golden_java/repro_check.txt`
+- Git init/commit/push:
+  - `git status`, `git config user.name/user.email`, `git commit -m "chore(ci,docs,oracle): ..."`
+  - `git remote -v` (verified origin), `git push -u origin main`
+
+3. DIFFS (FULL DIFFS FOR MOST IMPORTANT CHANGES)
+
+— FULL — s120_inequality_innovation/oracle/cli.py
+
+*** Begin Patch
+*** Update File: s120_inequality_innovation/oracle/cli.py
+@@
+-    if classpath and scenario_xml:
+-        run_java_oracle(scenario_xml, classpath, jvm_path=jvm, seed=seed)
++    if classpath and scenario_xml:
++        try:
++            run_java_oracle(scenario_xml, classpath, jvm_path=jvm, seed=seed)
++        except Exception as e:  # pragma: no cover
++            # Do not hard-fail here; allow collection to proceed so callers can inspect meta/logs
++            print(f"Warning: Java oracle run failed: {e}")
+*** End Patch
+
+— FULL — docs/oracle_local_run.md
+
+*** Begin Patch
+*** Add File: docs/oracle_local_run.md
+% Local Golden Generation (Java Oracle) – Seeded, Headless
+
+This guide shows how to generate canonical Java “golden” outputs locally for the S120 Caiani AB‑SFC model using our seeded, headless harness. Heavy runs are done locally; CI stays thin and only verifies smoke and artifact sanity.
+
+## Prerequisites
+- OpenJDK 17 installed (`java -version` prints 17+)
+- Python environment with this repo installed (`pip install -e .`)
+- JMAB + InequalityInnovation model built locally (classes/jars)
+- A Spring XML configuration for the model (e.g., `InequalityInnovation.xml`) or the provided headless XML adjusted to your machine
+
+## Classpath and XML
+You can provide these via CLI flags or environment variables:
+
+- `S120_ORACLE_CLASSPATH`: full Java classpath including JMAB, the model classes, and required libs. Example (Linux):
+  - `export S120_ORACLE_CLASSPATH="$HOME/work/jmab/bin:$HOME/work/InequalityInnovation/bin:$HOME/work/InequalityInnovation/lib/*:$HOME/work/jars/jabm-0.9.9.jar"`
+- `S120_ORACLE_XML`: Spring XML config. Prefer your model’s main XML (recommended), or use the headless file included here once you adjust absolute paths.
+
+Headless XML option provided in-repo:
+- `artifacts/golden_java/headless/main_headless.xml` and `artifacts/golden_java/headless/reports_headless.xml`
+- Before use, edit `main_headless.xml` to point `import resource="...ModelInnovationDistribution3.xml"` to your local absolute path where the model XML lives, and ensure the `reports_headless.xml` import points to this repo’s file on your machine.
+- The Python harness will patch `fileNamePrefix` per scenario automatically to write under `artifacts/golden_java/<scenario>/data/`.
+
+## Canonical schema
+Each scenario collects to:
+- `artifacts/golden_java/<scenario>/series.csv` with exact headers:
+  - `t,GDP,CONS,INV,INFL,UNEMP,PROD_C,Gini_income,Gini_wealth,Debt_GDP`
+- `artifacts/golden_java/<scenario>/meta.json` with `seed` (int), `horizon`, `theta`, `tu`, `raw_sources`, and `fileNamePrefix`.
+
+## Run commands (seeded)
+You may pass flags or rely on env vars. Replace `...` with your actual paths when not using env.
+
+- Baseline:
+  - `python -m s120_inequality_innovation.oracle.cli --classpath "$S120_ORACLE_CLASSPATH" --xml artifacts/golden_java/headless/main_headless.xml --seed 12345 baseline`
+- Tax frontier θ=0.0 and θ=1.5:
+  - `python -m s120_inequality_innovation.oracle.cli --classpath "$S120_ORACLE_CLASSPATH" --xml artifacts/golden_java/headless/main_headless.xml --seed 12345 tax --theta 0.0`
+  - `python -m s120_inequality_innovation.oracle.cli --classpath "$S120_ORACLE_CLASSPATH" --xml artifacts/golden_java/headless/main_headless.xml --seed 12345 tax --theta 1.5`
+- Wage frontier tu=1 and tu=4:
+  - `python -m s120_inequality_innovation.oracle.cli --classpath "$S120_ORACLE_CLASSPATH" --xml artifacts/golden_java/headless/main_headless.xml --seed 12345 wage --tu 1`
+  - `python -m s120_inequality_innovation.oracle.cli --classpath "$S120_ORACLE_CLASSPATH" --xml artifacts/golden_java/headless/main_headless.xml --seed 12345 wage --tu 4`
+
+Collector (only if you need to re-collect from an existing run dir):
+- `python -m s120_inequality_innovation.oracle.cli --xml artifacts/golden_java/headless/main_headless.xml collect --scenario baseline`
+
+## Reproducibility smoke (10 periods)
+- `python -m s120_inequality_innovation.oracle.cli --classpath "$S120_ORACLE_CLASSPATH" --xml artifacts/golden_java/headless/main_headless.xml repro --seed 12345`
+- Check `artifacts/golden_java/repro_check.txt` — it should say `PASSED` when classpath/XML are correct and the oracle is deterministic with the given seed.
+
+## Acceptance checks (local)
+- `meta.json.raw_sources` must not contain any `FALLBACK:` entries.
+- For each frontier, the window mean (t=501–1000) must differ from baseline in ≥3 of {GDP, CONS, INV, INFL, UNEMP, PROD_C}.
+
+## Troubleshooting
+- “Could not load a SimulationManager class from classpath”: your `S120_ORACLE_CLASSPATH` is incomplete or incorrect. Include both model classes and required `jabm`/deps.
+- Empty or NaN `series.csv`: verify `fileNamePrefix` in the scenario XML points under the scenario `data/` directory. The harness patches this automatically, but if your base XML has conflicting beans, ensure only one `fileNamePrefix` bean is active.
+- Mixed or non-canonical headers: the collector canonicalizes a broad set of known report names. If a key metric is missing, ensure the corresponding report is enabled in the model XML and re-run.
+- Repro check `FAILED`: confirm the seed is making its way into the oracle. The harness sets `jabm.seed`, `JABM_SEED`, and `seed` System properties.
+
+## Notes
+- CI never runs these heavy Java simulations. It only verifies smoke SFC checks and golden guards when artifacts are present.
+- To regenerate parameters mapping: see `docs/java_wsl_setup.md` and `s120_inequality_innovation/oracle/extract_params.py`.
+*** End Patch
+
+— FULL — docs/backlog.md
+
+*** Begin Patch
+*** Add File: docs/backlog.md
+% Updated Backlog
+
+```yaml
+- id: M1
+  title: Milestone – Engine ready (sfctools skeleton, scheduler, MC, CI)
+  rationale: Deterministic SFC engine with the 19-step loop, artifacting, diagnostics, and CI.
+  paper_refs:
+    - {section: "Sequencing & accounting discipline", page: null, eq_or_fig_or_tab: "19-step; FlowMatrix"}
+  deps: []
+  instructions: FlowMatrix glue; 19-step scheduler; seeds & MC runner; CI.
+  acceptance_criteria: "FlowMatrix checks pass at steps 3/7/12/16/19; smoke MC creates non-empty CSVs; CI green."
+  artifacts_expected: ["artifacts/smoke/.csv", ".github/workflows/ci.yml"]
+  repo_paths_hint: ["s120_inequality_innovation/*"]
+  estimate: L
+
+- id: M2
+  title: Milestone – Baseline parity vs Java
+  rationale: Match baseline macro & inequality dynamics to oracle within tolerances.
+  paper_refs:
+    - {section: "Baseline & validation window", page: null, eq_or_fig_or_tab: "t=501–1000; macro panels"}
+  deps: ["M1", "T-ORACLE-RUN-FRONTIERS", "T-GOLDEN-BASELINE", "T-BL-SLICE1", "T-BL-SLICE2", "T-BL-SLICE3-EXT"]
+  instructions: Implement baseline behaviors and compare to Java golden CSVs (baseline).
+  acceptance_criteria: "MC means (t=501–1000) for GDP, C, I, inflation, unemployment, C‑sector productivity within ±10% of oracle; co-movements preserved; inequality paths qualitatively consistent."
+  artifacts_expected: ["artifacts/golden_java/baseline/.csv", "artifacts/python/baseline/.csv", "reports/baseline_parity.md"]
+  repo_paths_hint: ["s120_inequality_innovation/*"]
+  estimate: L
+
+- id: M3
+  title: Milestone – Experiments parity (θ & tu sweeps)
+  rationale: Replicate direction and relative magnitudes for policy grids.
+  paper_refs:
+    - {section: "Policy experiments", page: null, eq_or_fig_or_tab: "Progressive tax θ; wage rigidity tu"}
+  deps: ["M2", "T-GOLDEN-EXPTS"]
+  instructions: Implement θ- and tu-sweeps; compute MC averages (t=501–1000); compare Δ vs baseline.
+  acceptance_criteria: "Signs & ordering match; |Δ| errors ≤10% vs oracle; Lorenz/Gini patterns qualitatively consistent."
+  artifacts_expected: ["artifacts/experiments/tax_sweep/", "artifacts/experiments/wage_sweep/", "reports/experiments_parity.md"]
+  repo_paths_hint: ["s120_inequality_innovation/*"]
+  estimate: L
+
+- id: T-SKEL
+  title: Project skeleton on sfctools + param registry
+  rationale: Parameterization mirrors Appendix A table to avoid drift.
+  paper_refs:
+    - {section: "Appendix A", page: null, eq_or_fig_or_tab: "Table 1 – Parameters"}
+  deps: ["M1"]
+  instructions: Registry loads/validates defaults; include χ, ε, ν, μ₀, θ, tu, rates, thresholds per Table 1.
+  acceptance_criteria: "params_default.yaml keys/values match Table 1; tests pass."
+  artifacts_expected: ["s120_inequality_innovation/config/params_default.yaml", "tests/test_params.py"]
+  repo_paths_hint: ["s120_inequality_innovation/config", "s120_inequality_innovation/core/registry.py"]
+  estimate: M
+
+- id: T-SCHED
+  title: 19-step scheduler scaffold + FlowMatrix checks
+  rationale: Enforce exact order of events and accounting cut-points.
+  paper_refs:
+    - {section: "Sec. 2.1", page: null, eq_or_fig_or_tab: "19-step sequence"}
+  deps: ["T-SKEL"]
+  instructions: Scheduler invokes step stubs; SFC checks after steps 3/7/12/16/19.
+  acceptance_criteria: "Unit test enumerates 19 labels; SFC check passes in smoke."
+  artifacts_expected: ["tests/test_scheduler_19steps.py", "artifacts/smoke/timeline.csv"]
+  repo_paths_hint: ["s120_inequality_innovation/core/scheduler.py", "s120_inequality_innovation/core/flowmatrix_glue.py"]
+  estimate: M
+
+- id: T-MC
+  title: Monte Carlo runner + seed management + artifact foldering
+  rationale: Reproducibility for baseline/experiments; fixed streams.
+  paper_refs:
+    - {section: "Simulation setup", page: null, eq_or_fig_or_tab: "1000 periods; 25 reps"}
+  deps: ["T-SCHED"]
+  instructions: Named RNG streams; per-run artifacts; aggregated stats.
+  acceptance_criteria: "25-run baseline executes; seeds logged; summary exists."
+  artifacts_expected: ["artifacts/baseline/run_*/series.csv", "artifacts/baseline/summary_mc.csv"]
+  repo_paths_hint: ["s120_inequality_innovation/mc/runner.py", "s120_inequality_innovation/io/writer.py"]
+  estimate: M
+
+- id: T-SFCTOOLS-INTEGRATE
+  title: Integrate real sfctools; residual checks & diagnostics
+  rationale: Use tested SFC engine; fail fast on accounting errors.
+  paper_refs:
+    - {section: "Stock–flow consistency", page: null, eq_or_fig_or_tab: "FlowMatrix guidance"}
+  deps: ["T-SCHED"]
+  instructions: Use PyPI sfctools; add fm_residuals.csv (max row/col abs) at cut-points; strict mode toggle.
+  acceptance_criteria: "5-period smoke: residuals ≤1e-10 at all cut-points; tests pass."
+  artifacts_expected: ["artifacts/smoke/fm_residuals.csv", "tests/test_flowmatrix_consistency.py"]
+  repo_paths_hint: ["requirements.txt", "s120_inequality_innovation/core/flowmatrix_glue.py"]
+  estimate: S
+
+- id: T-ORACLE-HARNESS
+  title: JPype primary harness; Py4J fallback
+  rationale: Programmatic launches of JMAB+S120 model as oracle.
+  paper_refs:
+    - {section: "JMAB entry point & config", page: null, eq_or_fig_or_tab: "DesktopSimulationManager; jabm.config"}
+  deps: ["T-MC"]
+  instructions: startJVM(classpath=[...]); System.setProperty("jabm.config", xml); SimulationManager.main([]) with Desktop fallback.
+  acceptance_criteria: "CLI help works; dry-run prints resolved cp/xml; baseline run produces CSVs."
+  artifacts_expected: ["s120_inequality_innovation/oracle/*.py", "oracle/README.md"]
+  repo_paths_hint: ["s120_inequality_innovation/oracle/"]
+  estimate: M
+
+- id: T-ORACLE-CSV-EXPORT
+  title: Standardize Java→CSV output schema
+  rationale: Ensure reproducible, parsable outputs (canonical headers).
+  paper_refs:
+    - {section: "Variables & metrics", page: null, eq_or_fig_or_tab: "Figures/Tables variable set"}
+  deps: ["T-ORACLE-HARNESS"]
+  instructions: Configure observers or collector to output: t,GDP,CONS,INV,INFL,UNEMP,PROD_C,Gini_income,Gini_wealth,Debt_GDP. Canonicalize headers & paths.
+  acceptance_criteria: "Canonical `series.csv` with exact headers; `meta.json` includes params & seed."
+  artifacts_expected: ["artifacts/golden_java/<run>/series.csv", "artifacts/golden_java/<run>/meta.json"]
+  repo_paths_hint: ["s120_inequality_innovation/oracle/", "artifacts/golden_java/"]
+  estimate: M
+
+- id: T-ORACLE-WSL-SETUP
+  title: WSL Java setup & classpath wiring (JMAB + S120)
+  rationale: Enable headless CLI/JPype launches in WSL.
+  paper_refs:
+    - {section: "JMAB overview", page: null, eq_or_fig_or_tab: "Main class & system property"}
+  deps: ["T-ORACLE-HARNESS"]
+  instructions: Install OpenJDK; clone jmab and InequalityInnovation; compile; construct CLASSPATH and XML path.
+  acceptance_criteria: "java -version ≥ 17; SimulationManager runs with -Djabm.config=<xml> in a smoke run; classpath file recorded."
+  artifacts_expected: ["docs/java_wsl_setup.md", "s120_inequality_innovation/oracle/classpath.txt"]
+  repo_paths_hint: ["docs/", "s120_inequality_innovation/oracle/"]
+  estimate: S
+
+- id: T-ORACLE-RUN-FRONTIERS
+  title: Oracle runs – Baseline + frontier scenarios (no placeholders)
+  rationale: Golden CSVs for acceptance tests.
+  paper_refs:
+    - {section: "Policy levers", page: null, eq_or_fig_or_tab: "θ (progressive tax), tu (wage rigidity)"}
+  deps: ["T-ORACLE-CSV-EXPORT", "T-ORACLE-WSL-SETUP", "T-ORACLE-SEED"]
+  instructions: Run baseline; θ∈{0.0,1.5}; tu∈{1,4}; fixed seed/horizon; ensure scenario-specific `fileNamePrefix`; canonicalize outputs.
+  acceptance_criteria: "5 runs present; canonical headers; meta.json includes seed & effective θ/tu; `meta.raw_sources` contains no 'FALLBACK:'; scenario `series.csv` differ from baseline in ≥3 of {GDP,CONS,INV,INFL,UNEMP,PROD_C}."
+  artifacts_expected:
+    ["artifacts/golden_java/baseline/series.csv",
+     "artifacts/golden_java/tax_theta0.0/series.csv",
+     "artifacts/golden_java/tax_theta1.5/series.csv",
+     "artifacts/golden_java/wage_tu1/series.csv",
+     "artifacts/golden_java/wage_tu4/series.csv"]
+  repo_paths_hint: ["s120_inequality_innovation/oracle/cli.py", "artifacts/golden_java/*"]
+  estimate: M
+
+- id: T-ORACLE-SEED
+  title: Deterministic seeding for Java oracle + provenance
+  rationale: Reproducibility across baseline/frontiers and CI.
+  paper_refs:
+    - {section: "Simulation setup", page: null, eq_or_fig_or_tab: "seed & horizon"}
+  deps: ["T-ORACLE-HARNESS"]
+  instructions: Pass a seed into JABM/SimulationManager (env or system property); log it; stamp into `meta.json`; add a 10-period reproducibility smoke check.
+  acceptance_criteria: "Seed in meta is an integer; re-running a 10‑period baseline with the same seed reproduces identical GDP for t=1..10; small text log saved."
+  artifacts_expected: ["artifacts/golden_java/repro_check.txt"]
+  repo_paths_hint: ["s120_inequality_innovation/oracle/*", "ci/"]
+  estimate: S
+
+- id: T-PARAM-HARMONIZE
+  title: Harmonize YAML with Java XML (one-to-one map)
+  rationale: Prevent calibration drift in Python vs Java.
+  paper_refs:
+    - {section: "Appendix A Table 1", page: null, eq_or_fig_or_tab: "Param registry"}
+  deps: ["T-ORACLE-HARNESS"]
+  instructions: Extract XML params; map to YAML via param_map.yaml; produce diff & doc.
+  acceptance_criteria: "params_extracted.json exists; reports/params_mapping.md diff empty or justified."
+  artifacts_expected: ["artifacts/golden_java/params_extracted.json", "reports/params_mapping.md"]
+  repo_paths_hint: ["s120_inequality_innovation/oracle/extract_params.py", "s120_inequality_innovation/config/param_map.yaml"]
+  estimate: M
+
+- id: T-GOLDEN-BASELINE
+  title: Python↔Java baseline acceptance test
+  rationale: Automate parity checks on steady window.
+  paper_refs:
+    - {section: "Validation window", page: null, eq_or_fig_or_tab: "t=501–1000"}
+  deps: ["T-ORACLE-RUN-FRONTIERS", "T-SFCTOOLS-INTEGRATE"]
+  instructions: Align series; compute window means; assert relative error ≤10% for GDP, C, I, inflation, unemployment, productivity.
+  acceptance_criteria: "tests/test_parity_baseline.py passes; reports/baseline_parity.md written with non‑trivial errors (not all 0.0%) and all ≤10%."
+  artifacts_expected: ["reports/baseline_parity.md", "tests/test_parity_baseline.py"]
+  repo_paths_hint: ["s120_inequality_innovation/io/golden_compare.py", "tests/*"]
+  estimate: M
+
+- id: T-GOLDEN-EXPTS
+  title: Acceptance tests for θ- and tu-sweeps
+  rationale: Lock experiment outcomes & guard regressions.
+  paper_refs:
+    - {section: "Policy experiments", page: null, eq_or_fig_or_tab: "Deltas vs baseline"}
+  deps: ["T-GOLDEN-BASELINE"]
+  instructions: Compute (MC window mean) deltas vs baseline; assert sign & ordering; |Δ| error ≤10%.
+  acceptance_criteria: "tests/test_parity_experiments.py passes; reports/experiments_parity.md"
+  artifacts_expected: ["reports/experiments_parity.md", "tests/test_parity_experiments.py"]
+  repo_paths_hint: ["s120_inequality_innovation/mc/runner.py", "s120_inequality_innovation/io/golden_compare.py"]
+  estimate: M
+
+- id: T-BL-SLICE1
+  title: Baseline behaviour slice 1 (Eqs. 3.1–3.10, 3.22)
+  rationale: Expectations, output/inventories, labor demand, pricing/markup, wage revision.
+  paper_refs:
+    - {section: "Model core", page: null, eq_or_fig_or_tab: "Eqs. 3.1–3.2, 3.3–3.6, 3.9–3.10, 3.22"}
+  deps: ["T-SFCTOOLS-INTEGRATE"]
+  instructions: Implement and wire steps 1–3, 9, 12, 14 with FlowMatrix entries.
+  acceptance_criteria: "100-period run closes SFC; inventory ratio near ν±0.05 by t≥50; wages>0; μ∈[0,1]."
+  artifacts_expected: ["artifacts/python/baseline_slice1/run_*/series.csv", "artifacts/python/baseline_slice1/fm_residuals.csv"]
+  repo_paths_hint: ["s120_inequality_innovation/core/slice1_engine.py", "s120_inequality_innovation/mc/slice1_runner.py"]
+  estimate: M
+
+- id: T-BL-SLICE2
+  title: Baseline behaviour slice 2 – Investment, capital vintages, innovation/imitation (Eqs. 3.11–3.16; Steps 4–5–10–11)
+  rationale: Add capital accumulation & Schumpeterian dynamics driving productivity/growth.
+  paper_refs:
+    - {section: "Investment & innovation", page: null, eq_or_fig_or_tab: "Eqs. 3.11–3.16"}
+  deps: ["T-BL-SLICE1"]
+  instructions: Desired capacity growth; investment demand; vintage comparison (ε intensity); R&D success & imitation probabilities; t+1 delivery.
+  acceptance_criteria: "300‑period run: PROD_C trend >0; Step‑11 lag respected; SFC residuals ≤1e‑10; innovation success rates within ±10% of target over t=100–300."
+  artifacts_expected: ["artifacts/python/baseline_slice2/run_001/series.csv", "artifacts/python/baseline_slice2/run_001/fm_residuals.csv", "artifacts/python/baseline_slice2/run_001/diag_innovation.csv", "reports/slice2_notes.md"]
+  repo_paths_hint: ["s120_inequality_innovation/core/slice2_engine.py", "s120_inequality_innovation/mc/slice2_runner.py"]
+  estimate: L
+
+- id: T-BL-SLICE3-EXT
+  title: Baseline behaviour slice 3 – extend credit/deposits/taxes/CB/bonds to constraints & defaults
+  rationale: Close financial circuit under constraints and prepare policy levers for experiments.
+  paper_refs:
+    - {section: "Finance & policy blocks", page: null, eq_or_fig_or_tab: "Steps 6–7–13–15–16–17–18–19; Eqs. 3.24–3.28"}
+  deps: ["T-BL-SLICE2"]
+  instructions: Implement bank capital & liquidity ratio constraints; deposit switching (ε, χ); CB advances & bond ops; default & recap hooks; ensure government funding identity each period.
+  acceptance_criteria: "End-of-period stocks reconcile; gov deficit = Δbonds + CB ops − Δdeposits; bank constraints satisfied; SFC residuals ≤1e‑10; defaults logged."
+  artifacts_expected: ["artifacts/python/baseline_slice3/run_001/series.csv", "artifacts/python/baseline_slice3/run_001/fm_residuals.csv", "artifacts/python/baseline_slice3/run_001/notes_gov_identity.csv", "reports/slice3_notes.md"]
+  repo_paths_hint: ["s120_inequality_innovation/core/slice3_engine.py", "s120_inequality_innovation/mc/slice3_runner.py"]
+  estimate: L
+
+- id: T-INEQ-METRICS
+  title: Inequality metrics & figures
+  rationale: Required for validation targets and experiment analysis.
+  paper_refs:
+    - {section: "Distributional outcomes", page: null, eq_or_fig_or_tab: "Lorenz & Gini (income/wealth)"}
+  deps: ["T-BL-SLICE3-EXT"]
+  instructions: Compute Lorenz curves & Gini for income and wealth per period; save MC window means; plotting scripts.
+  acceptance_criteria: "CSV with per-period Gini_income & Gini_wealth; figures regenerate deterministically; comparator picks metrics when present."
+  artifacts_expected: ["artifacts/python/baseline/inequality.csv", "artifacts/figures/inequality_.png"]
+  repo_paths_hint: ["s120_inequality_innovation/io/plots.py", "notebooks/figures.ipynb"]
+  estimate: M
+
+- id: T-CI-SMOKE
+  title: CI smoke – short-run SFC & anti-placeholder guards
+  rationale: Keep CI fast while guarding basics and preventing stubbed goldens.
+  paper_refs:
+    - {section: "Continuous integration", page: null, eq_or_fig_or_tab: "Smoke checks"}
+  deps: ["M1"]
+  instructions: GitHub Actions: run 5–10 period smoke; assert SFC residuals ≤1e-10; ensure oracle CLI `--help` works (no long runs); add guards against placeholder goldens.
+  acceptance_criteria: "CI job green in <10 min; artifacts uploaded for smoke; baseline meta.raw_sources has no 'FALLBACK:'; at least one frontier differs from baseline in GDP mean (when goldens are present)."
+  artifacts_expected: [".github/workflows/ci.yml", "ci/smoke_log.txt"]
+  repo_paths_hint: [".github/workflows/", "ci/"]
+  estimate: S
+```
+*** End Patch
+
+— CONDENSED — other incidental changes
+
+- Created `artifacts/golden_java/repro_check.txt` via the repro command (currently shows FAILED due to missing Java classpath in this environment).
+
+4. ARTIFACTS PRODUCED/UPDATED
+
+- Updated: `s120_inequality_innovation/oracle/cli.py`
+- Added: `docs/oracle_local_run.md`
+- Added: `docs/backlog.md` (full backlog YAML)
+- Created: `artifacts/golden_java/repro_check.txt` with first line:
+  - `Reproducibility check with seed=12345: FAILED`
+
+5. RESULTS / CHECKS
+
+- Git: repo initialized on `main`; commit created and pushed to `origin`.
+- CI: `.github/workflows/ci.yml` present; push triggers thin CI (smoke + guards). No heavy Java runs in CI.
+- Oracle repro: ran but FAILED without a valid Java classpath; this is expected here. Log file created.
+- Golden guard preview: baseline `meta.json` shows placeholders, confirming we still need real oracle runs.
+
+6. ISSUES & BLOCKERS
+
+- Real oracle runs (baseline/frontiers) blocked until a working `S120_ORACLE_CLASSPATH` and valid model XML are available locally. The harness is ready; needs actual JMAB+model jars/classes.
+- Current baseline golden `meta.json` includes a fallback source:
+  - "raw_sources": ["FALLBACK:artifacts/baseline/run_001/series.csv"]
+- Repro check failed in this environment due to missing SimulationManager on the classpath; will pass once classpath is correct.
+
+7. UPDATED BACKLOG (full YAML INLINE)
+
+```yaml
+- id: M1
+  title: Milestone – Engine ready (sfctools skeleton, scheduler, MC, CI)
+  rationale: Deterministic SFC engine with the 19-step loop, artifacting, diagnostics, and CI.
+  paper_refs:
+    - {section: "Sequencing & accounting discipline", page: null, eq_or_fig_or_tab: "19-step; FlowMatrix"}
+  deps: []
+  instructions: FlowMatrix glue; 19-step scheduler; seeds & MC runner; CI.
+  acceptance_criteria: "FlowMatrix checks pass at steps 3/7/12/16/19; smoke MC creates non-empty CSVs; CI green."
+  artifacts_expected: ["artifacts/smoke/.csv", ".github/workflows/ci.yml"]
+  repo_paths_hint: ["s120_inequality_innovation/*"]
+  estimate: L
+
+- id: M2
+  title: Milestone – Baseline parity vs Java
+  rationale: Match baseline macro & inequality dynamics to oracle within tolerances.
+  paper_refs:
+    - {section: "Baseline & validation window", page: null, eq_or_fig_or_tab: "t=501–1000; macro panels"}
+  deps: ["M1", "T-ORACLE-RUN-FRONTIERS", "T-GOLDEN-BASELINE", "T-BL-SLICE1", "T-BL-SLICE2", "T-BL-SLICE3-EXT"]
+  instructions: Implement baseline behaviors and compare to Java golden CSVs (baseline).
+  acceptance_criteria: "MC means (t=501–1000) for GDP, C, I, inflation, unemployment, C‑sector productivity within ±10% of oracle; co-movements preserved; inequality paths qualitatively consistent."
+  artifacts_expected: ["artifacts/golden_java/baseline/.csv", "artifacts/python/baseline/.csv", "reports/baseline_parity.md"]
+  repo_paths_hint: ["s120_inequality_innovation/*"]
+  estimate: L
+
+- id: M3
+  title: Milestone – Experiments parity (θ & tu sweeps)
+  rationale: Replicate direction and relative magnitudes for policy grids.
+  paper_refs:
+    - {section: "Policy experiments", page: null, eq_or_fig_or_tab: "Progressive tax θ; wage rigidity tu"}
+  deps: ["M2", "T-GOLDEN-EXPTS"]
+  instructions: Implement θ- and tu-sweeps; compute MC averages (t=501–1000); compare Δ vs baseline.
+  acceptance_criteria: "Signs & ordering match; |Δ| errors ≤10% vs oracle; Lorenz/Gini patterns qualitatively consistent."
+  artifacts_expected: ["artifacts/experiments/tax_sweep/", "artifacts/experiments/wage_sweep/", "reports/experiments_parity.md"]
+  repo_paths_hint: ["s120_inequality_innovation/*"]
+  estimate: L
+
+- id: T-SKEL
+  title: Project skeleton on sfctools + param registry
+  rationale: Parameterization mirrors Appendix A table to avoid drift.
+  paper_refs:
+    - {section: "Appendix A", page: null, eq_or_fig_or_tab: "Table 1 – Parameters"}
+  deps: ["M1"]
+  instructions: Registry loads/validates defaults; include χ, ε, ν, μ₀, θ, tu, rates, thresholds per Table 1.
+  acceptance_criteria: "params_default.yaml keys/values match Table 1; tests pass."
+  artifacts_expected: ["s120_inequality_innovation/config/params_default.yaml", "tests/test_params.py"]
+  repo_paths_hint: ["s120_inequality_innovation/config", "s120_inequality_innovation/core/registry.py"]
+  estimate: M
+
+- id: T-SCHED
+  title: 19-step scheduler scaffold + FlowMatrix checks
+  rationale: Enforce exact order of events and accounting cut-points.
+  paper_refs:
+    - {section: "Sec. 2.1", page: null, eq_or_fig_or_tab: "19-step sequence"}
+  deps: ["T-SKEL"]
+  instructions: Scheduler invokes step stubs; SFC checks after steps 3/7/12/16/19.
+  acceptance_criteria: "Unit test enumerates 19 labels; SFC check passes in smoke."
+  artifacts_expected: ["tests/test_scheduler_19steps.py", "artifacts/smoke/timeline.csv"]
+  repo_paths_hint: ["s120_inequality_innovation/core/scheduler.py", "s120_inequality_innovation/core/flowmatrix_glue.py"]
+  estimate: M
+
+- id: T-MC
+  title: Monte Carlo runner + seed management + artifact foldering
+  rationale: Reproducibility for baseline/experiments; fixed streams.
+  paper_refs:
+    - {section: "Simulation setup", page: null, eq_or_fig_or_tab: "1000 periods; 25 reps"}
+  deps: ["T-SCHED"]
+  instructions: Named RNG streams; per-run artifacts; aggregated stats.
+  acceptance_criteria: "25-run baseline executes; seeds logged; summary exists."
+  artifacts_expected: ["artifacts/baseline/run_*/series.csv", "artifacts/baseline/summary_mc.csv"]
+  repo_paths_hint: ["s120_inequality_innovation/mc/runner.py", "s120_inequality_innovation/io/writer.py"]
+  estimate: M
+
+- id: T-SFCTOOLS-INTEGRATE
+  title: Integrate real sfctools; residual checks & diagnostics
+  rationale: Use tested SFC engine; fail fast on accounting errors.
+  paper_refs:
+    - {section: "Stock–flow consistency", page: null, eq_or_fig_or_tab: "FlowMatrix guidance"}
+  deps: ["T-SCHED"]
+  instructions: Use PyPI sfctools; add fm_residuals.csv (max row/col abs) at cut-points; strict mode toggle.
+  acceptance_criteria: "5-period smoke: residuals ≤1e-10 at all cut-points; tests pass."
+  artifacts_expected: ["artifacts/smoke/fm_residuals.csv", "tests/test_flowmatrix_consistency.py"]
+  repo_paths_hint: ["requirements.txt", "s120_inequality_innovation/core/flowmatrix_glue.py"]
+  estimate: S
+
+- id: T-ORACLE-HARNESS
+  title: JPype primary harness; Py4J fallback
+  rationale: Programmatic launches of JMAB+S120 model as oracle.
+  paper_refs:
+    - {section: "JMAB entry point & config", page: null, eq_or_fig_or_tab: "DesktopSimulationManager; jabm.config"}
+  deps: ["T-MC"]
+  instructions: startJVM(classpath=[...]); System.setProperty("jabm.config", xml); SimulationManager.main([]) with Desktop fallback.
+  acceptance_criteria: "CLI help works; dry-run prints resolved cp/xml; baseline run produces CSVs."
+  artifacts_expected: ["s120_inequality_innovation/oracle/*.py", "oracle/README.md"]
+  repo_paths_hint: ["s120_inequality_innovation/oracle/"]
+  estimate: M
+
+- id: T-ORACLE-CSV-EXPORT
+  title: Standardize Java→CSV output schema
+  rationale: Ensure reproducible, parsable outputs (canonical headers).
+  paper_refs:
+    - {section: "Variables & metrics", page: null, eq_or_fig_or_tab: "Figures/Tables variable set"}
+  deps: ["T-ORACLE-HARNESS"]
+  instructions: Configure observers or collector to output: t,GDP,CONS,INV,INFL,UNEMP,PROD_C,Gini_income,Gini_wealth,Debt_GDP. Canonicalize headers & paths.
+  acceptance_criteria: "Canonical `series.csv` with exact headers; `meta.json` includes params & seed."
+  artifacts_expected: ["artifacts/golden_java/<run>/series.csv", "artifacts/golden_java/<run>/meta.json"]
+  repo_paths_hint: ["s120_inequality_innovation/oracle/", "artifacts/golden_java/"]
+  estimate: M
+
+- id: T-ORACLE-WSL-SETUP
+  title: WSL Java setup & classpath wiring (JMAB + S120)
+  rationale: Enable headless CLI/JPype launches in WSL.
+  paper_refs:
+    - {section: "JMAB overview", page: null, eq_or_fig_or_tab: "Main class & system property"}
+  deps: ["T-ORACLE-HARNESS"]
+  instructions: Install OpenJDK; clone jmab and InequalityInnovation; compile; construct CLASSPATH and XML path.
+  acceptance_criteria: "java -version ≥ 17; SimulationManager runs with -Djabm.config=<xml> in a smoke run; classpath file recorded."
+  artifacts_expected: ["docs/java_wsl_setup.md", "s120_inequality_innovation/oracle/classpath.txt"]
+  repo_paths_hint: ["docs/", "s120_inequality_innovation/oracle/"]
+  estimate: S
+
+- id: T-ORACLE-RUN-FRONTIERS
+  title: Oracle runs – Baseline + frontier scenarios (no placeholders)
+  rationale: Golden CSVs for acceptance tests.
+  paper_refs:
+    - {section: "Policy levers", page: null, eq_or_fig_or_tab: "θ (progressive tax), tu (wage rigidity)"}
+  deps: ["T-ORACLE-CSV-EXPORT", "T-ORACLE-WSL-SETUP", "T-ORACLE-SEED"]
+  instructions: Run baseline; θ∈{0.0,1.5}; tu∈{1,4}; fixed seed/horizon; ensure scenario-specific `fileNamePrefix`; canonicalize outputs.
+  acceptance_criteria: "5 runs present; canonical headers; meta.json includes seed & effective θ/tu; `meta.raw_sources` contains no 'FALLBACK:'; scenario `series.csv` differ from baseline in ≥3 of {GDP,CONS,INV,INFL,UNEMP,PROD_C}."
+  artifacts_expected:
+    ["artifacts/golden_java/baseline/series.csv",
+     "artifacts/golden_java/tax_theta0.0/series.csv",
+     "artifacts/golden_java/tax_theta1.5/series.csv",
+     "artifacts/golden_java/wage_tu1/series.csv",
+     "artifacts/golden_java/wage_tu4/series.csv"]
+  repo_paths_hint: ["s120_inequality_innovation/oracle/cli.py", "artifacts/golden_java/*"]
+  estimate: M
+
+- id: T-ORACLE-SEED
+  title: Deterministic seeding for Java oracle + provenance
+  rationale: Reproducibility across baseline/frontiers and CI.
+  paper_refs:
+    - {section: "Simulation setup", page: null, eq_or_fig_or_tab: "seed & horizon"}
+  deps: ["T-ORACLE-HARNESS"]
+  instructions: Pass a seed into JABM/SimulationManager (env or system property); log it; stamp into `meta.json`; add a 10-period reproducibility smoke check.
+  acceptance_criteria: "Seed in meta is an integer; re-running a 10‑period baseline with the same seed reproduces identical GDP for t=1..10; small text log saved."
+  artifacts_expected: ["artifacts/golden_java/repro_check.txt"]
+  repo_paths_hint: ["s120_inequality_innovation/oracle/*", "ci/"]
+  estimate: S
+
+- id: T-PARAM-HARMONIZE
+  title: Harmonize YAML with Java XML (one-to-one map)
+  rationale: Prevent calibration drift in Python vs Java.
+  paper_refs:
+    - {section: "Appendix A Table 1", page: null, eq_or_fig_or_tab: "Param registry"}
+  deps: ["T-ORACLE-HARNESS"]
+  instructions: Extract XML params; map to YAML via param_map.yaml; produce diff & doc.
+  acceptance_criteria: "params_extracted.json exists; reports/params_mapping.md diff empty or justified."
+  artifacts_expected: ["artifacts/golden_java/params_extracted.json", "reports/params_mapping.md"]
+  repo_paths_hint: ["s120_inequality_innovation/oracle/extract_params.py", "s120_inequality_innovation/config/param_map.yaml"]
+  estimate: M
+
+- id: T-GOLDEN-BASELINE
+  title: Python↔Java baseline acceptance test
+  rationale: Automate parity checks on steady window.
+  paper_refs:
+    - {section: "Validation window", page: null, eq_or_fig_or_tab: "t=501–1000"}
+  deps: ["T-ORACLE-RUN-FRONTIERS", "T-SFCTOOLS-INTEGRATE"]
+  instructions: Align series; compute window means; assert relative error ≤10% for GDP, C, I, inflation, unemployment, productivity.
+  acceptance_criteria: "tests/test_parity_baseline.py passes; reports/baseline_parity.md written with non‑trivial errors (not all 0.0%) and all ≤10%."
+  artifacts_expected: ["reports/baseline_parity.md", "tests/test_parity_baseline.py"]
+  repo_paths_hint: ["s120_inequality_innovation/io/golden_compare.py", "tests/*"]
+  estimate: M
+
+- id: T-GOLDEN-EXPTS
+  title: Acceptance tests for θ- and tu-sweeps
+  rationale: Lock experiment outcomes & guard regressions.
+  paper_refs:
+    - {section: "Policy experiments", page: null, eq_or_fig_or_tab: "Deltas vs baseline"}
+  deps: ["T-GOLDEN-BASELINE"]
+  instructions: Compute (MC window mean) deltas vs baseline; assert sign & ordering; |Δ| error ≤10%.
+  acceptance_criteria: "tests/test_parity_experiments.py passes; reports/experiments_parity.md"
+  artifacts_expected: ["reports/experiments_parity.md", "tests/test_parity_experiments.py"]
+  repo_paths_hint: ["s120_inequality_innovation/mc/runner.py", "s120_inequality_innovation/io/golden_compare.py"]
+  estimate: M
+
+- id: T-BL-SLICE1
+  title: Baseline behaviour slice 1 (Eqs. 3.1–3.10, 3.22)
+  rationale: Expectations, output/inventories, labor demand, pricing/markup, wage revision.
+  paper_refs:
+    - {section: "Model core", page: null, eq_or_fig_or_tab: "Eqs. 3.1–3.2, 3.3–3.6, 3.9–3.10, 3.22"}
+  deps: ["T-SFCTOOLS-INTEGRATE"]
+  instructions: Implement and wire steps 1–3, 9, 12, 14 with FlowMatrix entries.
+  acceptance_criteria: "100-period run closes SFC; inventory ratio near ν±0.05 by t≥50; wages>0; μ∈[0,1]."
+  artifacts_expected: ["artifacts/python/baseline_slice1/run_*/series.csv", "artifacts/python/baseline_slice1/fm_residuals.csv"]
+  repo_paths_hint: ["s120_inequality_innovation/core/slice1_engine.py", "s120_inequality_innovation/mc/slice1_runner.py"]
+  estimate: M
+
+- id: T-BL-SLICE2
+  title: Baseline behaviour slice 2 – Investment, capital vintages, innovation/imitation (Eqs. 3.11–3.16; Steps 4–5–10–11)
+  rationale: Add capital accumulation & Schumpeterian dynamics driving productivity/growth.
+  paper_refs:
+    - {section: "Investment & innovation", page: null, eq_or_fig_or_tab: "Eqs. 3.11–3.16"}
+  deps: ["T-BL-SLICE1"]
+  instructions: Desired capacity growth; investment demand; vintage comparison (ε intensity); R&D success & imitation probabilities; t+1 delivery.
+  acceptance_criteria: "300‑period run: PROD_C trend >0; Step‑11 lag respected; SFC residuals ≤1e‑10; innovation success rates within ±10% of target over t=100–300."
+  artifacts_expected: ["artifacts/python/baseline_slice2/run_001/series.csv", "artifacts/python/baseline_slice2/run_001/fm_residuals.csv", "artifacts/python/baseline_slice2/run_001/diag_innovation.csv", "reports/slice2_notes.md"]
+  repo_paths_hint: ["s120_inequality_innovation/core/slice2_engine.py", "s120_inequality_innovation/mc/slice2_runner.py"]
+  estimate: L
+
+- id: T-BL-SLICE3-EXT
+  title: Baseline behaviour slice 3 – extend credit/deposits/taxes/CB/bonds to constraints & defaults
+  rationale: Close financial circuit under constraints and prepare policy levers for experiments.
+  paper_refs:
+    - {section: "Finance & policy blocks", page: null, eq_or_fig_or_tab: "Steps 6–7–13–15–16–17–18–19; Eqs. 3.24–3.28"}
+  deps: ["T-BL-SLICE2"]
+  instructions: Implement bank capital & liquidity ratio constraints; deposit switching (ε, χ); CB advances & bond ops; default & recap hooks; ensure government funding identity each period.
+  acceptance_criteria: "End-of-period stocks reconcile; gov deficit = Δbonds + CB ops − Δdeposits; bank constraints satisfied; SFC residuals ≤1e‑10; defaults logged."
+  artifacts_expected: ["artifacts/python/baseline_slice3/run_001/series.csv", "artifacts/python/baseline_slice3/run_001/fm_residuals.csv", "artifacts/python/baseline_slice3/run_001/notes_gov_identity.csv", "reports/slice3_notes.md"]
+  repo_paths_hint: ["s120_inequality_innovation/core/slice3_engine.py", "s120_inequality_innovation/mc/slice3_runner.py"]
+  estimate: L
+
+- id: T-INEQ-METRICS
+  title: Inequality metrics & figures
+  rationale: Required for validation targets and experiment analysis.
+  paper_refs:
+    - {section: "Distributional outcomes", page: null, eq_or_fig_or_tab: "Lorenz & Gini (income/wealth)"}
+  deps: ["T-BL-SLICE3-EXT"]
+  instructions: Compute Lorenz curves & Gini for income and wealth per period; save MC window means; plotting scripts.
+  acceptance_criteria: "CSV with per-period Gini_income & Gini_wealth; figures regenerate deterministically; comparator picks metrics when present."
+  artifacts_expected: ["artifacts/python/baseline/inequality.csv", "artifacts/figures/inequality_.png"]
+  repo_paths_hint: ["s120_inequality_innovation/io/plots.py", "notebooks/figures.ipynb"]
+  estimate: M
+
+- id: T-CI-SMOKE
+  title: CI smoke – short-run SFC & anti-placeholder guards
+  rationale: Keep CI fast while guarding basics and preventing stubbed goldens.
+  paper_refs:
+    - {section: "Continuous integration", page: null, eq_or_fig_or_tab: "Smoke checks"}
+  deps: ["M1"]
+  instructions: GitHub Actions: run 5–10 period smoke; assert SFC residuals ≤1e-10; ensure oracle CLI `--help` works (no long runs); add guards against placeholder goldens.
+  acceptance_criteria: "CI job green in <10 min; artifacts uploaded for smoke; baseline meta.raw_sources has no 'FALLBACK:'; at least one frontier differs from baseline in GDP mean (when goldens are present)."
+  artifacts_expected: [".github/workflows/ci.yml", "ci/smoke_log.txt"]
+  repo_paths_hint: [".github/workflows/", "ci/"]
+  estimate: S
+```
+
+8. SNAPSHOT
+
+- Commit: `e81cdf5 chore(ci,docs,oracle): add local oracle run guide; backlog sync; resilient oracle CLI when Java unavailable`
+- Remote: `origin https://github.com/dkacz/caiani2` (push succeeded; Actions will run on the remote)
+
+9. GIT COMMITS MADE
+
+- e81cdf5 chore(ci,docs,oracle): add local oracle run guide; backlog sync; resilient oracle CLI when Java unavailable
+
+10. NEXT SUGGESTED STEPS
+
+- Provide a valid `S120_ORACLE_CLASSPATH` and point `--xml` to your local main model XML; then run seeded goldens per `docs/oracle_local_run.md` for: baseline, `tax --theta {0.0,1.5}`, and `wage --tu {1,4}`.
+- Re-run `repro --seed 12345`; ensure `artifacts/golden_java/repro_check.txt` says PASSED.
+- Verify each scenario’s `meta.json.raw_sources` excludes `FALLBACK:` and re-run the parity report; confirm all errors ≤10% and not all 0.0%.
+- Keep CI minimal; do not add heavy oracle runs to Actions.
+

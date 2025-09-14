@@ -24,7 +24,7 @@ Headless XML option provided in-repo:
 Each scenario collects to:
 - `artifacts/golden_java/<scenario>/series.csv` with exact headers:
   - `t,GDP,CONS,INV,INFL,UNEMP,PROD_C,Gini_income,Gini_wealth,Debt_GDP`
-- `artifacts/golden_java/<scenario>/meta.json` with `seed` (int), `horizon`, `theta`, `tu`, `raw_sources`, and `fileNamePrefix`.
+- `artifacts/golden_java/<scenario>/meta.json` with `seed` (int), `horizon`, `theta`, `tu`, `raw_sources`, `fileNamePrefix`, and run-status fields `java_run_ok` (bool) and `java_error` (string or null).
 
 ## Run commands (seeded)
 You may pass flags or rely on env vars. Replace `...` with your actual paths when not using env.

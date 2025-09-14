@@ -69,12 +69,27 @@ def run_oracle_scenario(spec: OracleRunSpec, outdir: Path, classpath: Optional[s
     meta.update({"classpath": classpath, "xml": str(scenario_xml) if scenario_xml else None})
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2, sort_keys=True)
+    java_run_ok = False
+    java_error: Optional[str] = None
     if classpath and scenario_xml:
         try:
             run_java_oracle(scenario_xml, classpath, jvm_path=jvm, seed=seed)
+            java_run_ok = True
         except Exception as e:  # pragma: no cover
             # Do not hard-fail here; allow collection to proceed so callers can inspect meta/logs
+            java_run_ok = False
+            java_error = str(e)[:500]
             print(f"Warning: Java oracle run failed: {e}")
+    # Stamp run status immediately so collectors and CI can see diagnostic state
+    try:
+        m = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+    except Exception:
+        m = {}
+    m.update({
+        "java_run_ok": bool(java_run_ok),
+        "java_error": java_error,
+    })
+    meta_path.write_text(json.dumps(m, indent=2, sort_keys=True), encoding="utf-8")
     else:
         print("Warning: Missing classpath or xml; wrote meta.json only.")
     # Attempt to collect canonical series and finalize meta
@@ -323,6 +338,14 @@ def _collect_and_write_canonical(spec: OracleRunSpec, outdir: Path, params: Para
                 meta = json.load(f)
             except Exception:
                 meta = {}
+    # Preserve any prior run-status keys; add defaults if missing
+    if "java_run_ok" not in meta:
+        # Heuristic: consider it OK if we used at least one non-fallback raw source
+        non_fb = [u for u in used_files if not str(u).startswith("FALLBACK:")]
+        meta["java_run_ok"] = bool(non_fb)
+    if "java_error" not in meta:
+        meta["java_error"] = None if meta.get("java_run_ok") else meta.get("java_error", "unknown or not executed")
+
     meta.update({
         "seed": int(seed) if seed is not None and str(seed).isdigit() else seed,
         "horizon": horizon,
