@@ -1,0 +1,87 @@
+# Appendix A Table 1 (baseline values)
+matching:
+  chi_consumption: 5
+  chi_capital: 5
+  chi_labor: 5
+  chi_credit: 5
+  chi_deposit: 5
+  epsilon_deposit: 4.62
+  epsilon_credit: 4.62
+  epsilon_consumption: 13.86
+  epsilon_capital: 13.86
+
+inventories:
+  nu_target: 0.10
+
+turnover:
+  theta_turnover: 0.05
+
+markups:
+  mu_c0: 0.32
+  mu_k0: 0.05
+
+folded_normal_fn1:
+  mean: 0.0
+  sigma: 0.015
+
+folded_normal_fn3:
+  mean: 0.0
+  sigma: 0.01
+
+wage_rigidity:
+  tu: 2
+
+taxes:
+  tau_profit0: 0.18
+  tau_income0: 0.08
+  tau_wage0: 0.05
+  theta_progressive: 0.0
+
+fiscal:
+  deficit_threshold_high: 0.05
+  deficit_threshold_low: 0.02
+  upsilon_adjust: 0.05
+
+capital_and_loans:
+  eta_loans_life: 20
+  kappa_capital_life: 20
+  target_profit_rate: 0.04345
+  target_utilization: 0.8
+  gamma1: 0.015
+  gamma2: 0.015
+
+innovation:
+  xi_inn: 0.015
+  xi_imi: 0.045
+
+precautionary:
+  sigma: 1.0
+
+dividends:
+  rho_c: 0.9
+  rho_k: 0.9
+  rho_b: 0.6
+
+rates:
+  i_l0: 0.0075
+  i_d0: 0.0025
+  capital_ratio_target0: 0.18
+  liquidity_ratio_target0: 0.26
+
+resolution:
+  haircut_iota: 0.5
+
+social:
+  dole_omega: 0.4
+
+cb_bonds:
+  i_a_cb: 0.005
+  i_bonds: 0.0025
+  p_bonds: 1.0
+
+meta:
+  horizon: 1000
+  mc_runs: 25
+  eval_window_start: 500
+  eval_window_end: 1000
+

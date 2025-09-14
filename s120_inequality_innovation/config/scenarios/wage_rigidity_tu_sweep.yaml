@@ -1,0 +1,11 @@
+name: wage_rigidity_tu_sweep
+grid:
+  wage_rigidity.tu: [1, 2, 3, 4]
+variants:
+  - name: all_workers
+    overrides: {}
+  - name: no_executives
+    overrides:
+      # Implementation placeholder: in future, exclude executives from tu changes
+      # For now, keep same as grid; logic will branch later.
+      dummy: 0

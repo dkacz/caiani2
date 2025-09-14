@@ -1,0 +1,19 @@
+{
+  "classpath": "/home/dominik/work/InequalityInnovation/lib/*:/home/dominik/work/jmab/lib/*",
+  "config_hash": "74eaa36fbf33",
+  "fileNamePrefix": null,
+  "horizon": 1000,
+  "overrides": {
+    "wage_rigidity": {
+      "tu": 4
+    }
+  },
+  "raw_sources": [
+    "FALLBACK:artifacts/baseline/run_001/series.csv"
+  ],
+  "scenario": "wage_tu4",
+  "seed": null,
+  "theta": 0.0,
+  "tu": 4,
+  "xml": null
+}

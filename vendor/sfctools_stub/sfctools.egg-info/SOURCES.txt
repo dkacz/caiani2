@@ -1,0 +1,6 @@
+pyproject.toml
+sfctools/__init__.py
+sfctools.egg-info/PKG-INFO
+sfctools.egg-info/SOURCES.txt
+sfctools.egg-info/dependency_links.txt
+sfctools.egg-info/top_level.txt

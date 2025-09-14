@@ -1,0 +1,12 @@
+{
+  "beans/bean/constructor-arg@value": "/mnt/c/Users/omare/caiani2/artifacts/golden_java/baseline/data",
+  "beans/bean/property/idref@local": "macroSimulation",
+  "beans/bean/property/list/ref@bean": "researchersDepositsCSVReport",
+  "beans/bean/property@name": "modelDescription",
+  "beans/bean/property@value": "Caiani et Al. - Innovation, Demand, and Finance in an Agent Based-Stock Flow Consistent model",
+  "beans/bean@class": "net.sourceforge.jabm.util.MutableStringWrapper",
+  "beans/bean@id": "fileNamePrefix",
+  "beans/bean@scope": "singleton",
+  "beans/import@resource": "file:/mnt/c/Users/omare/caiani2/artifacts/golden_java/headless/reports_headless.xml",
+  "beans@{http://www.w3.org/2001/XMLSchema-instance}schemaLocation": "http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd"
+}

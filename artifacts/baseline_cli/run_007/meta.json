@@ -1,0 +1,13 @@
+{
+  "config_hash": "de88d56c5041",
+  "horizon": 1000,
+  "run_id": 7,
+  "seeds": {
+    "rng_fn1": 271835,
+    "rng_fn2": 57728,
+    "rng_fn3": 141428,
+    "rng_match": 314166,
+    "rng_model": 49,
+    "rng_rnd": 424249
+  }
+}

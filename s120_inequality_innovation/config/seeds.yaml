@@ -1,0 +1,7 @@
+streams:
+  rng_model: 42
+  rng_match: 314159
+  rng_fn1: 271828
+  rng_fn2: 57721
+  rng_fn3: 141421
+  rng_rnd: 424242

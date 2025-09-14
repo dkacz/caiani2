@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: s120-inequality-innovation
+Version: 0.1.0
+Summary: Caiani–Russo–Gallegati (2018) replication on sfctools with Java oracle
+Requires-Python: >=3.10

@@ -1,0 +1,10 @@
+# Mapping from Java XML flattened keys (from extract_params.py)
+# to Python YAML dotted keys. This is a minimal starting point and will
+# be extended as we extract parameters from the full model XMLs.
+
+"beans/bean/constructor-arg@value": "oracle.fileNamePrefix"
+"beans/bean@id": "oracle.fileNamePrefix.bean_id"
+"beans/bean@property@name": "oracle.model_property_name"
+"beans/bean@property@value": "meta.modelDescription"
+"beans/import@resource": "oracle.reports_xml"
+"beans/bean/property/idref@local": "oracle.simulationBeanName"

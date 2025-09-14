@@ -1,0 +1,19 @@
+{
+  "classpath": "/home/dominik/work/InequalityInnovation/lib/*:/home/dominik/work/jmab/lib/*",
+  "config_hash": "9083ecc1b252",
+  "fileNamePrefix": null,
+  "horizon": 1000,
+  "overrides": {
+    "taxes": {
+      "theta_progressive": 1.5
+    }
+  },
+  "raw_sources": [
+    "FALLBACK:artifacts/baseline/run_001/series.csv"
+  ],
+  "scenario": "tax_theta1.5",
+  "seed": null,
+  "theta": 1.5,
+  "tu": 2,
+  "xml": null
+}

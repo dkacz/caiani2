@@ -1,0 +1,6 @@
+name: baseline
+overrides:
+  taxes:
+    theta_progressive: 0.0
+  wage_rigidity:
+    tu: 2

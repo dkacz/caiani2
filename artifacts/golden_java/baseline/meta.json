@@ -1,0 +1,15 @@
+{
+  "classpath": "/home/dominik/work/jmab/bin:/home/dominik/work/InequalityInnovation/bin:/home/dominik/work/InequalityInnovation/lib/*:/home/dominik/work/jars/jabm-0.9.9.jar",
+  "config_hash": "de88d56c5041",
+  "fileNamePrefix": "/mnt/c/Users/omare/caiani2/artifacts/golden_java/baseline/data",
+  "horizon": 1000,
+  "overrides": {},
+  "raw_sources": [
+    "FALLBACK:artifacts/baseline/run_001/series.csv"
+  ],
+  "scenario": "baseline",
+  "seed": null,
+  "theta": 0.0,
+  "tu": 2,
+  "xml": "/mnt/c/Users/omare/caiani2/artifacts/golden_java/headless/main_headless.xml"
+}

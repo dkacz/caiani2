@@ -1,0 +1,6 @@
+Metadata-Version: 2.4
+Name: sfctools
+Version: 0.0.0
+Summary: Local stub for sfctools FlowMatrix used for CI smoke.
+Author: Local Stub
+Requires-Python: >=3.8

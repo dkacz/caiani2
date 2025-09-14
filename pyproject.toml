@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "s120-inequality-innovation"
+version = "0.1.0"
+description = "Caiani–Russo–Gallegati (2018) replication on sfctools with Java oracle"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["s120_inequality_innovation*"]
+exclude = ["tests*"]
