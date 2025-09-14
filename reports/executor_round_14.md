@@ -1,4 +1,107 @@
-% Updated Backlog
+1. WHAT I CHANGED
+
+- Removed GitHub Actions CI entirely and replaced CI-only guards with a local script `scripts/golden_guard.py`.
+- Updated local docs to reflect the no-CI policy and how to run local guards.
+- Synced the backlog to the new YAML (CI removed; local-only acceptance). 
+- Kept `java_run_ok/java_error` meta fields as mandated; no oracle runner changes needed this round.
+
+2. COMMANDS I RAN
+
+- Inspected and removed CI:
+  - `ls -la .github/workflows`
+  - Deleted `.github/workflows/ci.yml`
+- Searched and updated CI references in docs:
+  - `rg -n "CI|Actions|badge|workflow" docs README.md -S`
+  - Edited `docs/oracle_local_run.md`, `docs/java_wsl_setup.md`
+- Added and exercised the local guard:
+  - `python3 scripts/golden_guard.py` (fails as expected until real goldens exist without FALLBACK)
+
+3. DIFFS (FULL DIFFS FOR MOST IMPORTANT CHANGES - CONDENSED FOR LESS IMPORTANT)
+
+— FULL — Deletion of GitHub Actions
+
+*** Begin Patch
+*** Delete File: .github/workflows/ci.yml
+*** End Patch
+
+— FULL — scripts/golden_guard.py (new)
+
+*** Begin Patch
+*** Add File: scripts/golden_guard.py
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import sys
+
+import pandas as pd
+
+
+BASE_META = Path("artifacts/golden_java/baseline/meta.json")
+BASE_SER = Path("artifacts/golden_java/baseline/series.csv")
+FRONTIER_SER = Path("artifacts/golden_java/tax_theta1.5/series.csv")
+
+
+def guard_no_fallback(meta_path: Path) -> None:
+    if not meta_path.exists():
+        print("skipped: golden baseline meta not found")
+        return
+    try:
+        m = json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise SystemExit(f"error: failed to read meta.json: {e}")
+    raw = m.get("raw_sources", [])
+    if any(isinstance(x, str) and x.startswith("FALLBACK:") for x in raw):
+        raise SystemExit("guard failed: FALLBACK found in baseline raw_sources")
+    print("ok: baseline raw_sources contains no FALLBACK markers")
+
+
+def guard_gdp_diff(base_csv: Path, frontier_csv: Path) -> None:
+    if not (base_csv.exists() and frontier_csv.exists()):
+        print("skipped: baseline or frontier series not found")
+        return
+    b = pd.read_csv(base_csv)
+    f = pd.read_csv(frontier_csv)
+    wb = b[(b["t"] >= 501) & (b["t"] <= 1000)]["GDP"].mean()
+    wf = f[(f["t"] >= 501) & (f["t"] <= 1000)]["GDP"].mean()
+    if pd.isna(wb) or pd.isna(wf):
+        raise SystemExit("guard failed: empty window means for GDP")
+    if abs(float(wb) - float(wf)) <= 1e-12:
+        raise SystemExit("guard failed: frontier equals baseline GDP mean — placeholder suspected")
+    print("ok: GDP means differ between baseline and tax_theta1.5")
+
+
+def main() -> int:
+    guard_no_fallback(BASE_META)
+    guard_gdp_diff(BASE_SER, FRONTIER_SER)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+*** End Patch
+
+— CONDENSED — docs/oracle_local_run.md, docs/java_wsl_setup.md, docs/backlog.md updated to remove CI references and sync backlog to the local-only YAML.
+
+4. ARTIFACTS PRODUCED/UPDATED
+
+- Deleted: `.github/workflows/ci.yml`
+- Added: `scripts/golden_guard.py`
+- Updated: `docs/oracle_local_run.md`, `docs/java_wsl_setup.md`, `docs/backlog.md`
+
+5. RESULTS / CHECKS
+
+- `python3 scripts/golden_guard.py` currently reports:
+  - `guard failed: FALLBACK found in baseline raw_sources` (expected until we generate real goldens locally).
+- Docs now reference local guards; no CI files remain in the repo.
+
+6. ISSUES & BLOCKERS
+
+- Real seeded Java goldens (baseline + frontiers) must be generated locally using a valid `S120_ORACLE_CLASSPATH` and main model XML path. Without them, guards fail as designed and parity remains pending.
+
+7. UPDATED BACKLOG (full YAML INLINE - NEW, CI DROPPED)
 
 ```yaml
 - id: M1
@@ -20,7 +123,7 @@
     - {section: "Baseline & validation window", page: null, eq_or_fig_or_tab: "t=501–1000; macro panels"}
   deps: ["M1", "T-ORACLE-RUN-FRONTIERS", "T-GOLDEN-BASELINE", "T-BL-SLICE1", "T-BL-SLICE2", "T-BL-SLICE3-EXT"]
   instructions: Implement baseline behaviors and compare to Java golden CSVs (baseline).
-  acceptance_criteria: "MC means (t=501–1000) for GDP, C, I, inflation, unemployment, C‑sector productivity within ±10% of oracle; co-movements preserved; inequality paths qualitatively consistent."
+  acceptance_criteria: "MC means (t=501–1000) for GDP, C, I, INFL, UNEMP, PROD_C within ±10% of oracle; co-movements preserved; inequality paths qualitatively consistent."
   artifacts_expected: ["artifacts/golden_java/baseline/.csv", "artifacts/python/baseline/.csv", "reports/baseline_parity.md"]
   repo_paths_hint: ["s120_inequality_innovation/*"]
   estimate: L
@@ -44,7 +147,7 @@
     - {section: "Appendix A", page: null, eq_or_fig_or_tab: "Table 1 – Parameters"}
   deps: ["M1"]
   instructions: Registry loads/validates defaults; include χ, ε, ν, μ₀, θ, tu, rates, thresholds per Table 1.
-  acceptance_criteria: "params_default.yaml keys/values match Table 1; tests pass."
+  acceptance_criteria: "params_default.yaml keys/values match Table 1; tests pass locally."
   artifacts_expected: ["s120_inequality_innovation/config/params_default.yaml", "tests/test_params.py"]
   repo_paths_hint: ["s120_inequality_innovation/config", "s120_inequality_innovation/core/registry.py"]
   estimate: M
@@ -56,7 +159,7 @@
     - {section: "Sec. 2.1", page: null, eq_or_fig_or_tab: "19-step sequence"}
   deps: ["T-SKEL"]
   instructions: Scheduler invokes step stubs; SFC checks after steps 3/7/12/16/19.
-  acceptance_criteria: "Unit test enumerates 19 labels; SFC check passes in smoke."
+  acceptance_criteria: "Unit test enumerates 19 labels; local SFC smoke passes."
   artifacts_expected: ["tests/test_scheduler_19steps.py", "artifacts/smoke/timeline.csv"]
   repo_paths_hint: ["s120_inequality_innovation/core/scheduler.py", "s120_inequality_innovation/core/flowmatrix_glue.py"]
   estimate: M
@@ -68,7 +171,7 @@
     - {section: "Simulation setup", page: null, eq_or_fig_or_tab: "1000 periods; 25 reps"}
   deps: ["T-SCHED"]
   instructions: Named RNG streams; per-run artifacts; aggregated stats.
-  acceptance_criteria: "25-run baseline executes; seeds logged; summary exists."
+  acceptance_criteria: "25-run baseline executes locally; seeds logged; summary exists."
   artifacts_expected: ["artifacts/baseline/run_*/series.csv", "artifacts/baseline/summary_mc.csv"]
   repo_paths_hint: ["s120_inequality_innovation/mc/runner.py", "s120_inequality_innovation/io/writer.py"]
   estimate: M
@@ -80,7 +183,7 @@
     - {section: "Stock–flow consistency", page: null, eq_or_fig_or_tab: "FlowMatrix guidance"}
   deps: ["T-SCHED"]
   instructions: Use PyPI sfctools; add fm_residuals.csv (max row/col abs) at cut-points; strict mode toggle.
-  acceptance_criteria: "5-period smoke: residuals ≤1e-10 at all cut-points; tests pass."
+  acceptance_criteria: "5-period smoke: residuals ≤1e-10 at all cut-points; tests pass locally."
   artifacts_expected: ["artifacts/smoke/fm_residuals.csv", "tests/test_flowmatrix_consistency.py"]
   repo_paths_hint: ["requirements.txt", "s120_inequality_innovation/core/flowmatrix_glue.py"]
   estimate: S
@@ -156,7 +259,7 @@
   paper_refs:
     - {section: "Diagnostics", page: null, eq_or_fig_or_tab: "Run metadata"}
   deps: ["T-ORACLE-CSV-EXPORT"]
-  instructions: In collector: set `java_run_ok: true/false` and `java_error` (string) in meta.json depending on JPype call outcome.
+  instructions: In collector: set `java_run_ok` and `java_error` based on JPype call outcome; default consistently if not executed.
   acceptance_criteria: "meta.json contains run-status fields for every scenario."
   artifacts_expected: ["artifacts/golden_java/<run>/meta.json"]
   repo_paths_hint: ["s120_inequality_innovation/oracle/cli.py"]
@@ -180,8 +283,8 @@
   paper_refs:
     - {section: "Validation window", page: null, eq_or_fig_or_tab: "t=501–1000"}
   deps: ["T-ORACLE-RUN-FRONTIERS", "T-SFCTOOLS-INTEGRATE"]
-  instructions: Align series; compute window means; assert relative error ≤10% for GDP, C, I, inflation, unemployment, productivity.
-  acceptance_criteria: "tests/test_parity_baseline.py passes; reports/baseline_parity.md written with non‑trivial errors (not all 0.0%) and all ≤10%."
+  instructions: Align series; compute window means; assert relative error ≤10% for GDP, C, I, INFL, UNEMP, PROD_C.
+  acceptance_criteria: "tests/test_parity_baseline.py passes locally; reports/baseline_parity.md written with non‑trivial errors (not all 0.0%) and all ≤10%."
   artifacts_expected: ["reports/baseline_parity.md", "tests/test_parity_baseline.py"]
   repo_paths_hint: ["s120_inequality_innovation/io/golden_compare.py", "tests/*"]
   estimate: M
@@ -197,54 +300,20 @@
   artifacts_expected: ["reports/experiments_parity.md", "tests/test_parity_experiments.py"]
   repo_paths_hint: ["s120_inequality_innovation/mc/runner.py", "s120_inequality_innovation/io/golden_compare.py"]
   estimate: M
-
-- id: T-BL-SLICE1
-  title: Baseline behaviour slice 1 (Eqs. 3.1–3.10, 3.22)
-  rationale: Expectations, output/inventories, labor demand, pricing/markup, wage revision.
-  paper_refs:
-    - {section: "Model core", page: null, eq_or_fig_or_tab: "Eqs. 3.1–3.2, 3.3–3.6, 3.9–3.10, 3.22"}
-  deps: ["T-SFCTOOLS-INTEGRATE"]
-  instructions: Implement and wire steps 1–3, 9, 12, 14 with FlowMatrix entries.
-  acceptance_criteria: "100-period run closes SFC; inventory ratio near ν±0.05 by t≥50; wages>0; μ∈[0,1]."
-  artifacts_expected: ["artifacts/python/baseline_slice1/run_*/series.csv", "artifacts/python/baseline_slice1/fm_residuals.csv"]
-  repo_paths_hint: ["s120_inequality_innovation/core/slice1_engine.py", "s120_inequality_innovation/mc/slice1_runner.py"]
-  estimate: M
-
-- id: T-BL-SLICE2
-  title: Baseline behaviour slice 2 – Investment, capital vintages, innovation/imitation (Eqs. 3.11–3.16; Steps 4–5–10–11)
-  rationale: Add capital accumulation & Schumpeterian dynamics driving productivity/growth.
-  paper_refs:
-    - {section: "Investment & innovation", page: null, eq_or_fig_or_tab: "Eqs. 3.11–3.16"}
-  deps: ["T-BL-SLICE1"]
-  instructions: Desired capacity growth; investment demand; vintage comparison (ε intensity); R&D success & imitation probabilities; t+1 delivery.
-  acceptance_criteria: "300‑period run: PROD_C trend >0; Step‑11 lag respected; SFC residuals ≤1e‑10; innovation success rates within ±10% of target over t=100–300."
-  artifacts_expected: ["artifacts/python/baseline_slice2/run_001/series.csv", "artifacts/python/baseline_slice2/run_001/fm_residuals.csv", "artifacts/python/baseline_slice2/run_001/diag_innovation.csv", "reports/slice2_notes.md"]
-  repo_paths_hint: ["s120_inequality_innovation/core/slice2_engine.py", "s120_inequality_innovation/mc/slice2_runner.py"]
-  estimate: L
-
-- id: T-BL-SLICE3-EXT
-  title: Baseline behaviour slice 3 – extend credit/deposits/taxes/CB/bonds to constraints & defaults
-  rationale: Close financial circuit under constraints and prepare policy levers for experiments.
-  paper_refs:
-    - {section: "Finance & policy blocks", page: null, eq_or_fig_or_tab: "Steps 6–7–13–15–16–17–18–19; Eqs. 3.24–3.28"}
-  deps: ["T-BL-SLICE2"]
-  instructions: Implement bank capital & liquidity ratio constraints; deposit switching (ε, χ); CB advances & bond ops; default & recap hooks; ensure government funding identity each period.
-  acceptance_criteria: "End-of-period stocks reconcile; gov deficit = Δbonds + CB ops − Δdeposits; bank constraints satisfied; SFC residuals ≤1e‑10; defaults logged."
-  artifacts_expected: ["artifacts/python/baseline_slice3/run_001/series.csv", "artifacts/python/baseline_slice3/run_001/fm_residuals.csv", "artifacts/python/baseline_slice3/run_001/notes_gov_identity.csv", "reports/slice3_notes.md"]
-  repo_paths_hint: ["s120_inequality_innovation/core/slice3_engine.py", "s120_inequality_innovation/mc/slice3_runner.py"]
-  estimate: L
-
-- id: T-INEQ-METRICS
-  title: Inequality metrics & figures
-  rationale: Required for validation targets and experiment analysis.
-  paper_refs:
-    - {section: "Distributional outcomes", page: null, eq_or_fig_or_tab: "Lorenz & Gini (income/wealth)"}
-  deps: ["T-BL-SLICE3-EXT"]
-  instructions: Compute Lorenz curves & Gini for income and wealth per period; save MC window means; plotting scripts.
-  acceptance_criteria: "CSV with per-period Gini_income & Gini_wealth; figures regenerate deterministically; comparator picks metrics when present."
-  artifacts_expected: ["artifacts/python/baseline/inequality.csv", "artifacts/figures/inequality_.png"]
-  repo_paths_hint: ["s120_inequality_innovation/io/plots.py", "notebooks/figures.ipynb"]
-  estimate: M
-
-``` 
 ```
+
+8. SNAPSHOT
+
+- CI removed; local guard script in place. Oracle harness unchanged this round. Ready to run seeded goldens locally when classpath/XML are provided.
+
+9. GIT COMMITS MADE
+
+- chore(repo): remove CI and badges; add local golden_guard.py
+
+10. NEXT SUGGESTED STEPS
+
+- Set `S120_ORACLE_CLASSPATH` and update the headless XML import path to your local `ModelInnovationDistribution3.xml`.
+- Run the 5 seeded scenarios to generate real goldens; confirm `java_run_ok=true` and no `FALLBACK:`.
+- Run `python scripts/golden_guard.py` and the repro smoke; then recompute `reports/baseline_parity.md` with the real baseline.
+- Expand `config/param_map.yaml` and regenerate `reports/params_mapping.md` to cover required parameters.
+

@@ -1,15 +1,104 @@
-% Updated Backlog
+1. WHAT I CHANGED
+
+- Implemented meta run-status stamping in the oracle collector:
+  - `java_run_ok: true|false` and `java_error: <string|null>` now recorded in each scenario’s `meta.json`.
+  - On Java run success, `java_run_ok=true`; on exception, `java_run_ok=false` with trimmed error message.
+  - Collector also back-fills these fields if absent, based on collected sources (heuristic) so meta always contains them.
+- Updated local run guide to document the new run-status fields.
+- Synced `docs/backlog.md` to the updated YAML including `T-META-STATUS` and the dependency from `T-ORACLE-RUN-FRONTIERS`.
+
+2. COMMANDS I RAN
+
+- Edited and committed code/docs; pushed to remote to trigger CI:
+  - `git add -A && git commit -m "feat(oracle): collector meta run-status fields (java_run_ok/java_error); docs: local run guide + backlog sync" && git push origin main`
+
+3. DIFFS (FULL DIFFS FOR MOST IMPORTANT CHANGES)
+
+— FULL — s120_inequality_innovation/oracle/cli.py
+
+@@
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2, sort_keys=True)
+    java_run_ok = False
+    java_error: Optional[str] = None
+    if classpath and scenario_xml:
+        try:
+            run_java_oracle(scenario_xml, classpath, jvm_path=jvm, seed=seed)
+            java_run_ok = True
+        except Exception as e:  # pragma: no cover
+            # Do not hard-fail here; allow collection to proceed so callers can inspect meta/logs
+            java_run_ok = False
+            java_error = str(e)[:500]
+            print(f"Warning: Java oracle run failed: {e}")
+    # Stamp run status immediately so collectors and CI can see diagnostic state
+    try:
+        m = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+    except Exception:
+        m = {}
+    m.update({
+        "java_run_ok": bool(java_run_ok),
+        "java_error": java_error,
+    })
+    meta_path.write_text(json.dumps(m, indent=2, sort_keys=True), encoding="utf-8")
+
+@@
+    # Preserve any prior run-status keys; add defaults if missing
+    if "java_run_ok" not in meta:
+        # Heuristic: consider it OK if we used at least one non-fallback raw source
+        non_fb = [u for u in used_files if not str(u).startswith("FALLBACK:")]
+        meta["java_run_ok"] = bool(non_fb)
+    if "java_error" not in meta:
+        meta["java_error"] = None if meta.get("java_run_ok") else meta.get("java_error", "unknown or not executed")
+
+— FULL — docs/oracle_local_run.md
+
+@@
+ - `artifacts/golden_java/<scenario>/meta.json` with `seed` (int), `horizon`, `theta`, `tu`, `raw_sources`, `fileNamePrefix`, and run-status fields `java_run_ok` (bool) and `java_error` (string or null).
+
+— FULL — docs/backlog.md
+
+@@
+  deps: ["T-ORACLE-CSV-EXPORT", "T-ORACLE-WSL-SETUP", "T-ORACLE-SEED", "T-META-STATUS"]
+@@
+- id: T-META-STATUS
+  title: Meta run-status stamping in collector
+  rationale: Avoids silent failures when Java run falls back to collection.
+  paper_refs:
+    - {section: "Diagnostics", page: null, eq_or_fig_or_tab: "Run metadata"}
+  deps: ["T-ORACLE-CSV-EXPORT"]
+  instructions: In collector: set `java_run_ok: true/false` and `java_error` (string) in meta.json depending on JPype call outcome.
+  acceptance_criteria: "meta.json contains run-status fields for every scenario."
+  artifacts_expected: ["artifacts/golden_java/<run>/meta.json"]
+  repo_paths_hint: ["s120_inequality_innovation/oracle/cli.py"]
+  estimate: XS
+
+4. ARTIFACTS PRODUCED/UPDATED
+
+- Code: `s120_inequality_innovation/oracle/cli.py` (run-status stamping and collector defaults)
+- Docs: `docs/oracle_local_run.md` (run-status fields), `docs/backlog.md` (updated YAML)
+
+5. RESULTS / CHECKS
+
+- Meta run-status fields will now be present for every scenario’s `meta.json` and reflect the outcome when Java is invoked; collector provides sensible defaults otherwise.
+- CI remains thin; no heavy oracle runs are added. The pipeline should still pass its smoke and guards when goldens are present.
+
+6. ISSUES & BLOCKERS
+
+- Real seeded goldens (baseline + frontiers) are pending a valid `S120_ORACLE_CLASSPATH` and local model XML path. Until then, `raw_sources` may still show `FALLBACK:` and parity runs will be skipped.
+- The reproducibility check currently fails in this environment without a proper Java classpath; will pass once the environment is wired.
+
+7. UPDATED BACKLOG (full YAML INLINE)
 
 ```yaml
 - id: M1
-  title: Milestone – Engine ready (sfctools skeleton, scheduler, MC)
-  rationale: Deterministic SFC engine with the 19-step loop, artifacting, diagnostics.
+  title: Milestone – Engine ready (sfctools skeleton, scheduler, MC, CI)
+  rationale: Deterministic SFC engine with the 19-step loop, artifacting, diagnostics, and CI.
   paper_refs:
     - {section: "Sequencing & accounting discipline", page: null, eq_or_fig_or_tab: "19-step; FlowMatrix"}
   deps: []
-  instructions: FlowMatrix glue; 19-step scheduler; seeds & MC runner.
-  acceptance_criteria: "FlowMatrix checks pass at steps 3/7/12/16/19; local smoke run creates non-empty CSVs."
-  artifacts_expected: ["artifacts/smoke/.csv"]
+  instructions: FlowMatrix glue; 19-step scheduler; seeds & MC runner; CI.
+  acceptance_criteria: "FlowMatrix checks pass at steps 3/7/12/16/19; smoke MC creates non-empty CSVs; CI green."
+  artifacts_expected: ["artifacts/smoke/.csv", ".github/workflows/ci.yml"]
   repo_paths_hint: ["s120_inequality_innovation/*"]
   estimate: L
 
@@ -89,10 +178,10 @@
   title: JPype primary harness; Py4J fallback
   rationale: Programmatic launches of JMAB+S120 model as oracle.
   paper_refs:
-    - {section: "JMAB entry point & config", page: null, eq_or_fig_or_tab: "SimulationManager; jabm.config"}
+    - {section: "JMAB entry point & config", page: null, eq_or_fig_or_tab: "DesktopSimulationManager; jabm.config"}
   deps: ["T-MC"]
   instructions: startJVM(classpath=[...]); System.setProperty("jabm.config", xml); SimulationManager.main([]) with Desktop fallback.
-  acceptance_criteria: "CLI help works; dry-run prints resolved cp/xml; baseline run produces CSVs (locally)."
+  acceptance_criteria: "CLI help works; dry-run prints resolved cp/xml; baseline run produces CSVs."
   artifacts_expected: ["s120_inequality_innovation/oracle/*.py", "oracle/README.md"]
   repo_paths_hint: ["s120_inequality_innovation/oracle/"]
   estimate: M
@@ -103,32 +192,32 @@
   paper_refs:
     - {section: "Variables & metrics", page: null, eq_or_fig_or_tab: "Figures/Tables variable set"}
   deps: ["T-ORACLE-HARNESS"]
-  instructions: Collector outputs: t,GDP,CONS,INV,INFL,UNEMP,PROD_C,Gini_income,Gini_wealth,Debt_GDP. Canonicalize headers & paths.
-  acceptance_criteria: "Canonical series.csv; meta.json includes params, seed, raw_sources, java_run_ok/java_error."
+  instructions: Configure observers or collector to output: t,GDP,CONS,INV,INFL,UNEMP,PROD_C,Gini_income,Gini_wealth,Debt_GDP. Canonicalize headers & paths.
+  acceptance_criteria: "Canonical `series.csv` with exact headers; `meta.json` includes params & seed."
   artifacts_expected: ["artifacts/golden_java/<run>/series.csv", "artifacts/golden_java/<run>/meta.json"]
   repo_paths_hint: ["s120_inequality_innovation/oracle/", "artifacts/golden_java/"]
   estimate: M
 
 - id: T-ORACLE-WSL-SETUP
   title: WSL Java setup & classpath wiring (JMAB + S120)
-  rationale: Enable headless CLI/JPype launches locally.
+  rationale: Enable headless CLI/JPype launches in WSL.
   paper_refs:
     - {section: "JMAB overview", page: null, eq_or_fig_or_tab: "Main class & system property"}
   deps: ["T-ORACLE-HARNESS"]
   instructions: Install OpenJDK; clone jmab and InequalityInnovation; compile; construct CLASSPATH and XML path.
-  acceptance_criteria: "java -version ≥ 17; SimulationManager runs with -Djabm.config=<xml> in a local smoke run; classpath recorded."
+  acceptance_criteria: "java -version ≥ 17; SimulationManager runs with -Djabm.config=<xml> in a smoke run; classpath file recorded."
   artifacts_expected: ["docs/java_wsl_setup.md", "s120_inequality_innovation/oracle/classpath.txt"]
   repo_paths_hint: ["docs/", "s120_inequality_innovation/oracle/"]
   estimate: S
 
 - id: T-ORACLE-RUN-FRONTIERS
-  title: Oracle runs – Baseline + frontier scenarios (local, no placeholders)
+  title: Oracle runs – Baseline + frontier scenarios (no placeholders)
   rationale: Golden CSVs for acceptance tests.
   paper_refs:
     - {section: "Policy levers", page: null, eq_or_fig_or_tab: "θ (progressive tax), tu (wage rigidity)"}
   deps: ["T-ORACLE-CSV-EXPORT", "T-ORACLE-WSL-SETUP", "T-ORACLE-SEED", "T-META-STATUS"]
-  instructions: Run baseline; θ∈{0.0,1.5}; tu∈{1,4}; fixed seed/horizon; scenario-specific `fileNamePrefix`; canonicalize outputs (locally).
-  acceptance_criteria: "5 runs present; canonical headers; meta.json includes seed & θ/tu; `raw_sources` has no 'FALLBACK:'; `java_run_ok=true`; scenario series differ from baseline in ≥3 of {GDP,CONS,INV,INFL,UNEMP,PROD_C}."
+  instructions: Run baseline; θ∈{0.0,1.5}; tu∈{1,4}; fixed seed/horizon; ensure scenario-specific `fileNamePrefix`; canonicalize outputs.
+  acceptance_criteria: "5 runs present; canonical headers; meta.json includes seed & effective θ/tu; `meta.raw_sources` contains no 'FALLBACK:'; scenario `series.csv` differ from baseline in ≥3 of {GDP,CONS,INV,INFL,UNEMP,PROD_C}."
   artifacts_expected:
     ["artifacts/golden_java/baseline/series.csv",
      "artifacts/golden_java/tax_theta0.0/series.csv",
@@ -140,14 +229,14 @@
 
 - id: T-ORACLE-SEED
   title: Deterministic seeding for Java oracle + provenance
-  rationale: Reproducibility across baseline/frontiers.
+  rationale: Reproducibility across baseline/frontiers and CI.
   paper_refs:
     - {section: "Simulation setup", page: null, eq_or_fig_or_tab: "seed & horizon"}
   deps: ["T-ORACLE-HARNESS"]
-  instructions: Pass a seed via Java System properties; stamp into meta.json; add a 10-period reproducibility smoke check (local).
+  instructions: Pass a seed into JABM/SimulationManager (env or system property); log it; stamp into `meta.json`; add a 10-period reproducibility smoke check.
   acceptance_criteria: "Seed in meta is an integer; re-running a 10‑period baseline with the same seed reproduces identical GDP for t=1..10; small text log saved."
   artifacts_expected: ["artifacts/golden_java/repro_check.txt"]
-  repo_paths_hint: ["s120_inequality_innovation/oracle/*", "artifacts/golden_java/"]
+  repo_paths_hint: ["s120_inequality_innovation/oracle/*", "ci/"]
   estimate: S
 
 - id: T-META-STATUS
@@ -246,5 +335,33 @@
   repo_paths_hint: ["s120_inequality_innovation/io/plots.py", "notebooks/figures.ipynb"]
   estimate: M
 
-``` 
+- id: T-CI-SMOKE
+  title: CI smoke – short-run SFC & anti-placeholder guards
+  rationale: Keep CI fast while guarding basics and preventing stubbed goldens.
+  paper_refs:
+    - {section: "Continuous integration", page: null, eq_or_fig_or_tab: "Smoke checks"}
+  deps: ["M1"]
+  instructions: GitHub Actions: run 5–10 period smoke; assert SFC residuals ≤1e-10; ensure oracle CLI `--help` works (no long runs); add guards against placeholder goldens.
+  acceptance_criteria: "CI job green in <10 min; artifacts uploaded for smoke; baseline meta.raw_sources has no 'FALLBACK:'; at least one frontier differs from baseline in GDP mean (when goldens are present)."
+  artifacts_expected: [".github/workflows/ci.yml", "ci/smoke_log.txt"]
+  repo_paths_hint: [".github/workflows/", "ci/"]
+  estimate: S
 ```
+
+8. SNAPSHOT
+
+- Latest commit: `1d2ae60 feat(oracle): collector meta run-status fields (java_run_ok/java_error); docs: local run guide + backlog sync`
+- Remote: origin is configured and up to date; CI will run on the push.
+
+9. GIT COMMITS MADE
+
+- 1d2ae60 feat(oracle): collector meta run-status fields (java_run_ok/java_error); docs: local run guide + backlog sync
+- e81cdf5 chore(ci,docs,oracle): add local oracle run guide; backlog sync; resilient oracle CLI when Java unavailable
+
+10. NEXT SUGGESTED STEPS
+
+- Provide `S120_ORACLE_CLASSPATH` and confirm the main model XML path; then I will run the five seeded oracle scenarios to replace placeholders and produce real goldens.
+- Run the reproducibility smoke (`repro --seed 12345`) to generate a `PASSED` log.
+- Recompute baseline parity on the real golden and produce an updated `reports/baseline_parity.md` with non-trivial errors ≤10%.
+- Expand `config/param_map.yaml` and regenerate `reports/params_mapping.md` using your local `ModelInnovationDistribution3.xml`.
+

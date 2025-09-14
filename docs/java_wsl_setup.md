@@ -57,4 +57,8 @@ make oracle-frontiers
 ```
 
 Artifacts are written under `artifacts/golden_java/...` with `series.csv` and
-`meta.json` per scenario.
+`meta.json` per scenario. There is no CI; run local guards with:
+
+```bash
+python scripts/golden_guard.py
+```

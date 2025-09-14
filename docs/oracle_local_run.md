@@ -1,6 +1,6 @@
 % Local Golden Generation (Java Oracle) – Seeded, Headless
 
-This guide shows how to generate canonical Java “golden” outputs locally for the S120 Caiani AB‑SFC model using our seeded, headless harness. Heavy runs are done locally; CI stays thin and only verifies smoke and artifact sanity.
+This guide shows how to generate canonical Java “golden” outputs locally for the S120 Caiani AB‑SFC model using our seeded, headless harness. All verification is done locally; there is no GitHub Actions CI in this repo.
 
 ## Prerequisites
 - OpenJDK 17 installed (`java -version` prints 17+)
@@ -56,5 +56,5 @@ Collector (only if you need to re-collect from an existing run dir):
 - Repro check `FAILED`: confirm the seed is making its way into the oracle. The harness sets `jabm.seed`, `JABM_SEED`, and `seed` System properties.
 
 ## Notes
-- CI never runs these heavy Java simulations. It only verifies smoke SFC checks and golden guards when artifacts are present.
+- Heavy Java simulations and guards run locally. Use `scripts/golden_guard.py` after generating goldens.
 - To regenerate parameters mapping: see `docs/java_wsl_setup.md` and `s120_inequality_innovation/oracle/extract_params.py`.
